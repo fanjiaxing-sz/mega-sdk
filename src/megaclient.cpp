@@ -5461,6 +5461,10 @@ bool MegaClient::procsc()
                     return true;
 
                 case makeNameid("a"):
+                    {
+                        BufferActionPacket bap{jsonsc.pos, *this};
+                        std::cout << "[FAN] bap: " << bap.getBuffer() <<std::endl;
+                    }
                     if (jsonsc.enterarray())
                     {
                         LOG_debug << "Processing action packets for " << string(sessionid, sizeof(sessionid));
@@ -24329,6 +24333,65 @@ void MegaClient::getSubscriptionCancellationDetails(
                                                            originalTransactionId,
                                                            gatewayId,
                                                            std::move(completion)));
+}
+
+void BufferActionPacket::forward()
+{
+    for(;;)
+    {
+        switch(*jsonsc.pos)
+        {
+        case '{':
+            token.push(Token::OBJECT);
+            break;
+        case '[':
+            token.push(Token::ARRAY);
+            break;
+        case '}':
+            token.pop();
+            break;
+        case ']':
+            token.pop();
+            if (token.empty())
+            {
+                string temp = string(start, jsonsc.pos+1);
+                buffer = std::move(temp);
+                return;
+            }
+            break;
+        }
+        jsonsc.pos++;
+    }
+}
+
+//'"a":[{"a":"t","t":{"f":[{"a":"123"}]}}]'
+void BufferActionPacket::doGetBuffer()
+{
+    if (jsonsc.enterarray())
+    {
+        token.push(Token::ARRAY);
+        if (jsonsc.enterobject())
+        {
+            token.push(Token::OBJECT);
+            if (jsonsc.getnameid() == makeNameid("a"))
+            {
+                nameid name = jsonsc.getnameidvalue();
+
+                // only process server-client request if not marked as
+                // self-originating ("i" marker element guaranteed to be following
+                // "a" element if present)
+                if (mc.fetchingnodes || !Utils::startswith(jsonsc.pos, "\"i\":\"") ||
+                    memcmp(jsonsc.pos + 5, mc.sessionid, sizeof mc.sessionid) ||
+                    jsonsc.pos[5 + sizeof mc.sessionid] != '"' || name == name_id::d || name == 't')
+                {
+                    if (valid_avalue.find(name) != valid_avalue.end())
+                    {
+                        return forward();
+                    }
+                }
+            }
+        }
+    }
 }
 
 } // namespace

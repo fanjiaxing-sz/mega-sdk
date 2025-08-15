@@ -51,6 +51,7 @@
 #include <mega/fuse/common/service.h>
 
 #include <optional>
+#include <stack>
 
 namespace mega {
 
@@ -3441,8 +3442,82 @@ private:
 
     // Last known capacity retrieved from the cloud.
     m_off_t mLastKnownCapacity = -1;
+
+    void buffer_action_packet();
 };
 
+class BufferActionPacket {
+public:
+    BufferActionPacket(const char* s, MegaClient &mc) : mc(mc), start(s)
+    {
+        jsonsc.begin(s);
+    }
+
+    const string getBuffer() {
+        if (done)
+            return buffer;
+        else {
+            doGetBuffer();
+            done = true;
+        }
+        return buffer;
+    }
+private:
+    string buffer;
+    JSON jsonsc;
+    MegaClient &mc;
+    bool done = false;
+
+    const char* start;
+    std::unordered_set<nameid> valid_avalue = {
+        name_id::u,
+        makeNameid("t"),
+        name_id::d,
+        makeNameid("s"),
+        makeNameid("s2"),
+        name_id::c,
+        makeNameid("fa"),
+        makeNameid("ua"),
+        name_id::psts,
+        name_id::psts_v2,
+        makeNameid("ftr"),
+        name_id::pses,
+        name_id::ipc,
+        makeNameid("opc"),
+        name_id::upci,
+        name_id::upco,
+        makeNameid("ph"),
+        makeNameid("se"),
+        makeNameid("mcpc"),
+        makeNameid("mcc"),
+        makeNameid("mcfpc"),
+        makeNameid("mcfc"),
+        makeNameid("mcpna"),
+        makeNameid("mcna"),
+#ifdef ENABLE_CHAT
+        name_id::mcsmp,
+        name_id::mcsmr,
+#endif
+        makeNameid("uac"),
+        makeNameid("la"),
+        makeNameid("ub"),
+        makeNameid("sqac"),
+        makeNameid("asp"),
+        makeNameid("ass"),
+        makeNameid("asr"),
+        makeNameid("aep"),
+        makeNameid("aer"),
+        makeNameid("pk"),
+        makeNameid("uec"),
+        makeNameid("cce"),
+    };
+
+    enum class Token {ARRAY, OBJECT};
+    std::stack<Token> token;
+
+    void doGetBuffer();
+    void forward();
+};
 } // namespace
 
 #define char_is_not_digit [](unsigned char c) { return !::mega::is_digit(c); }

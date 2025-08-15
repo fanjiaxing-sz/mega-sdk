@@ -7029,7 +7029,17 @@ void exec_lpwd(autocomplete::ACState&)
     cout << fs::current_path().u8string() << endl;
 }
 
-void exec_test(autocomplete::ACState&) {}
+ //test '"b","bb","a":[{"a":"t","t":{"f":[{"a":"123"}]}}]'
+void exec_test(autocomplete::ACState& s) {
+    cout << "[FAN] exec_test" << endl;
+
+    if (s.words.size() >= 2)
+    {
+        cout << "JSON: " << s.words[1].s << endl;
+        string *myjson = new string(s.words[1].s);
+        client->jsonsc.begin(myjson->c_str());
+    }
+}
 
 void exec_mfad(autocomplete::ACState& s)
 {
