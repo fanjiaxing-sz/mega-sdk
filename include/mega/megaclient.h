@@ -3442,8 +3442,6 @@ private:
 
     // Last known capacity retrieved from the cloud.
     m_off_t mLastKnownCapacity = -1;
-
-    void buffer_action_packet();
 };
 
 class BufferActionPacket {
