@@ -6580,6 +6580,32 @@ void uploadLocalPath(nodetype_t type, std::string name, const LocalPath& localna
                         cout << "Identical file already exist. Skipping transfer of " << name << endl;
                         return;
                     }
+                    if (allowDuplicateVersions && fp.isvalid && previousNode->isvalid && fp == *((FileFingerprint *)previousNode.get()))
+                    {
+                        SymmCipher cipher;
+                        std::string remoteKey = previousNode->nodekey();
+                        const char *iva = &remoteKey[SymmCipher::KEYLENGTH];
+
+                        cipher.setkey((byte*)&remoteKey[0], previousNode->type);
+                        int64_t remoteIv = MemAccess::get<int64_t>(iva);
+                        int64_t remoteMac = MemAccess::get<int64_t>(iva + sizeof(int64_t));
+
+                        auto result = generateMetaMac(cipher, *fa, remoteIv);
+                        if (!result.first)
+                        {
+                            cerr << "Failed to generate metamac for: "
+                                 << name
+                                 << endl;
+                        }
+                        else
+                        {
+                            if (result.second == remoteMac)
+                            {
+                                cout << "[MAC] Identical file already exist. Skipping transfer of " << name << endl;
+                                return;
+                            }
+                        }
+                    }
                 }
                 else
                 {
