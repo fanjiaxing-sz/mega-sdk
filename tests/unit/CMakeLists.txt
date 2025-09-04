@@ -53,6 +53,7 @@ target_sources(test_unit
     shared_mutex_tests.cpp
     uripath_test.cpp
     Sqlite_test.cpp
+    BufferActionPacker_test.cpp
 )
 
 target_sources_conditional(test_unit

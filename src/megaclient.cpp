@@ -5462,8 +5462,8 @@ bool MegaClient::procsc()
 
                 case makeNameid("a"):
                     {
-                        BufferActionPacket bap{jsonsc.pos, *this};
-                        std::cout << "[FAN] bap: " << bap.getBuffer() <<std::endl;
+                        BufferActionPacket bap{jsonsc.pos, this};
+                        LOG_debug << "[FAN] just test bap: " << bap.getBuffer();
                     }
                     if (jsonsc.enterarray())
                     {
@@ -24335,63 +24335,101 @@ void MegaClient::getSubscriptionCancellationDetails(
                                                            std::move(completion)));
 }
 
-void BufferActionPacket::forward()
+    // The keys can be composed of these elements:
+    // { or [ -> unnamed object or array
+    // {name or [name -> object or array with the name "name"
+    // "name -> string value for an attribute with name "name"
+    // These alements can be appended to specify full paths, for example:
+    // {[f{ -> unnamed objects, inside an array with the name "f", inside an unnamed object
+    // {[ipc -> array with the name "ipc" inside an unnamed object
+void BufferActionPacket::setFilters()
 {
-    for(;;)
+    //'"a":[{"a":"t","t":{"f":[{"a":"123","h":"MTIzNDU2"},{"b":"456","h":"MjM0NTY3"}]}}]'
+    mFilters.emplace("[{", [this](JSON *json)
     {
-        switch(*jsonsc.pos)
+        LOG_debug << "[FAN] meet [{: " << json->pos;
+        return json->leaveobject();
+    });
+
+    mFilters.emplace("[{\"a", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet start: " << json->pos;
+        nameid name = json->getnameidvalue();
+        if (valid_avalue.find(name) != valid_avalue.end())
         {
-        case '{':
-            token.push(Token::OBJECT);
-            break;
-        case '[':
-            token.push(Token::ARRAY);
-            break;
-        case '}':
-            token.pop();
-            break;
-        case ']':
-            token.pop();
-            if (token.empty())
+            is_ap = true;
+            if (name == 't')
             {
-                string temp = string(start, jsonsc.pos+1);
-                buffer = std::move(temp);
-                return;
+                have_t = true;
             }
-            break;
         }
-        jsonsc.pos++;
-    }
+
+        return true;
+    });
+
+    mFilters.emplace("[{{t", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet t element: " << json->pos;
+        return json->leaveobject();
+    });
+
+    auto f = mFilters.emplace("[{{t[f{", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet fa element: " << json->pos;
+
+        if (!have_t)
+        {
+            return json->storeobject();
+        }
+
+        //TODO: just test
+        if (client->readnode(json, 1, PUTNODES_APP, nullptr, false, true,
+                             mMissingParentNodes, mPreviousHandleForAlert,
+                             nullptr, // allParents disabled because Syncs::triggerSync
+                             // does nothing when MegaClient::fetchingnodes is true
+                             nullptr, nullptr) != 1)
+        {
+            return false;
+        }
+        return json->leaveobject();
+    });
+
+    mFilters.emplace("[{{t[f2{}", f.first->second);
+
+    mFilters.emplace("[{{t[f", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet f element: " << json->pos;
+        return json->leavearray();
+    });
+
+    mFilters.emplace("[", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet end: " << json->pos;
+        return json->leavearray();
+    });
+
+    mFilters.emplace("E", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet ERROR:" << json->pos;
+        return true;
+    });
+
+    mFilters.emplace("#", [this](JSON *json)
+    {
+        LOG_debug << "[FAN] meet value:" << json->pos;
+        return true;
+    });
 }
 
-//'"a":[{"a":"t","t":{"f":[{"a":"123"}]}}]'
 void BufferActionPacket::doGetBuffer()
 {
-    if (jsonsc.enterarray())
+    auto consumed = mJsonSplitter.processChunk(&mFilters, start);
+    if (mJsonSplitter.hasFinished() && !have_t && is_ap)
     {
-        token.push(Token::ARRAY);
-        if (jsonsc.enterobject())
-        {
-            token.push(Token::OBJECT);
-            if (jsonsc.getnameid() == makeNameid("a"))
-            {
-                nameid name = jsonsc.getnameidvalue();
-
-                // only process server-client request if not marked as
-                // self-originating ("i" marker element guaranteed to be following
-                // "a" element if present)
-                if (mc.fetchingnodes || !Utils::startswith(jsonsc.pos, "\"i\":\"") ||
-                    memcmp(jsonsc.pos + 5, mc.sessionid, sizeof mc.sessionid) ||
-                    jsonsc.pos[5 + sizeof mc.sessionid] != '"' || name == name_id::d || name == 't')
-                {
-                    if (valid_avalue.find(name) != valid_avalue.end())
-                    {
-                        return forward();
-                    }
-                }
-            }
-        }
+        string temp = string(start, start+consumed);
+        buffer = std::move(temp);
     }
+    return;
 }
 
 } // namespace

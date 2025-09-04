@@ -3446,27 +3446,42 @@ private:
 
 class BufferActionPacket {
 public:
-    BufferActionPacket(const char* s, MegaClient &mc) : mc(mc), start(s)
+    BufferActionPacket(const char* s, MegaClient *client) : client(client), start(s)
     {
         jsonsc.begin(s);
+        setFilters();
     }
 
-    const string getBuffer() {
+    const string getBuffer()
+    {
         if (done)
+        {
             return buffer;
-        else {
+        }
+        else
+        {
             doGetBuffer();
             done = true;
         }
         return buffer;
     }
+
 private:
     string buffer;
+    JSONSplitter mJsonSplitter;
+    std::map<std::string, std::function<bool(JSON *)>> mFilters;
+
     JSON jsonsc;
-    MegaClient &mc;
+    MegaClient *client;
     bool done = false;
+    bool have_t = false;
+    bool is_ap = false;
+
+    handle mPreviousHandleForAlert = UNDEF;
+    NodeManager::MissingParentNodes mMissingParentNodes;
 
     const char* start;
+
     std::unordered_set<nameid> valid_avalue = {
         name_id::u,
         makeNameid("t"),
@@ -3510,11 +3525,8 @@ private:
         makeNameid("cce"),
     };
 
-    enum class Token {ARRAY, OBJECT};
-    std::stack<Token> token;
-
+    void setFilters();
     void doGetBuffer();
-    void forward();
 };
 } // namespace
 
