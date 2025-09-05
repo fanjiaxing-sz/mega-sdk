@@ -18049,7 +18049,8 @@ string MegaClient::decypherTLVTextWithMasterKey(const char* name, const string& 
 // inject file into transfer subsystem
 // if file's fingerprint is not valid, it will be obtained from the local file
 // (PUT) or the file's key (GET)
-bool MegaClient::startxfer(direction_t d, File* f, TransferDbCommitter& committer, bool skipdupes, bool startfirst, bool donotpersist, VersioningOption vo, error* cause, int tag, m_off_t availableDiskSpace)
+bool MegaClient::
+startxfer(direction_t d, File* f, TransferDbCommitter& committer, bool skipdupes, bool startfirst, bool donotpersist, VersioningOption vo, error* cause, int tag, m_off_t availableDiskSpace)
 {
     assert(f->getLocalname().isAbsolute());
     f->mVersioningOption = vo;
@@ -18130,6 +18131,30 @@ bool MegaClient::startxfer(direction_t d, File* f, TransferDbCommitter& committe
                 return false;
             }
 
+            //check Identical file by fingerprint
+            auto src_node = nodebyfingerprint(f);
+            if (src_node)
+            {
+                //copy node
+                //FANadd
+                
+
+                //setup new nodes from src_node
+                NewNode nn;
+                
+                // tree root: no parent
+                nn.parenthandle = UNDEF;
+                nn.ovhandle = f->h;
+
+                //create f node
+                vector<NewNode> nodes;
+                nodes[0] = nn;
+                VersioningOption vo = NoVersioning
+                putnodes(f->h, vo, std::move(nodes), nullptr, 1, false);
+
+                return true;
+            }
+
 #ifdef USE_MEDIAINFO
             mediaFileInfo.requestCodecMappingsOneTime(this, f->getLocalname());
 #endif
@@ -18148,6 +18173,7 @@ bool MegaClient::startxfer(direction_t d, File* f, TransferDbCommitter& committe
         Transfer* t = NULL;
         auto range = multi_transfers[d].equal_range(f);
         for (auto it = range.first; it != range.second; ++it)
+        
         {
             if (it->second->files.empty()) continue;
             File* f2 = it->second->files.front();
@@ -18541,6 +18567,45 @@ std::shared_ptr<Node> MegaClient::nodebyfingerprint(LocalNode* localNode)
     return *remoteNode;
 }
 #endif /* ENABLE_SYNC */
+
+std::shared_ptr<Node> MegaClient::nodebyfingerprint(const File* f)
+{
+    sharedNode_vector remoteNodes = mNodeManager.getNodesByFingerprint(*f);
+
+    if (remoteNodes.empty())
+        return nullptr;
+
+    auto remoteNode = remoteNodes.begin();
+
+    // Compare the local file's metamac against a random candidate.
+    //
+    // If we're unable to generate the metamac, fail in such a way that
+    // guarantees safe behavior.
+    //
+    // That is, treat both nodes as distinct until we're absolutely certain
+    // they are identical.
+    auto ifAccess = fsaccess->newfileaccess();
+
+    auto localPath = f->getLocalname();
+
+    if (!ifAccess->fopen(localPath, true, false, FSLogging::logOnError))
+        return nullptr;
+
+    std::string remoteKey = (*remoteNode)->nodekey();
+    const char *iva = &remoteKey[SymmCipher::KEYLENGTH];
+
+    SymmCipher cipher;
+    cipher.setkey((byte*)&remoteKey[0], (*remoteNode)->type);
+
+    int64_t remoteIv = MemAccess::get<int64_t>(iva);
+    int64_t remoteMac = MemAccess::get<int64_t>(iva + sizeof(int64_t));
+
+    auto result = generateMetaMac(cipher, *ifAccess, remoteIv);
+    if (!result.first || result.second != remoteMac)
+        return nullptr;
+
+    return *remoteNode;
+}
 
 static bool nodes_ctime_greater(const Node* a, const Node* b)
 {

@@ -2278,6 +2278,7 @@ public:
 #if ENABLE_SYNC
     std::shared_ptr<Node> nodebyfingerprint(LocalNode*);
 #endif /* ENABLE_SYNC */
+    std::shared_ptr<Node> nodebyfingerprint(const File*);
 
 private:
     // Private helper method for getRecentActions
